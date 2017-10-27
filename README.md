@@ -1,5 +1,4 @@
-# RainbowNet
-## Color Extrapolation from Grayscale Images
+## RainbowNet: Color Extrapolation from Grayscale Images
 
 CS 229/230 final project.
 * Owen Wang (ojwang@cs.stanford.edu)
