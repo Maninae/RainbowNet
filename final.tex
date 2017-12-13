@@ -64,8 +64,7 @@ We would like to explore how well a deep learning approach performs on a task th
 
 % TODO
 
-
-% Describe your dataset: how many training/validation/test examples do you have? Is there any preprocessing you did? What about normalization or data augmentation? What is the resolution of your images? How is your time-series data discretized? Include a citation on where you obtained your dataset from. Depending on available space, show some examples from your dataset. You should also talk about the features you used. If you extracted features using Fourier transforms, word2vec, histogram of oriented gradients (HOG), PCA, ICA, etc. make sure to talk about it. Try to include examples of your data in the report (e.g. include an image, show a waveform, etc.).
+% You should find existing papers, group them into categories based on their approaches, and discuss their strengths and weaknesses, as well as how they are similar to and differ from your work. In your opinion, which approaches were clever/good? What is the stateof-the-art? Do most people perform the task by hand? You should aim to have at least 5 references in the related work. Include previous attempts by others at your problem, previous technical methods, or previous learning algorithms. Google Scholar is very useful for this: https://scholar.google.com/ (you can click “cite” and it generates MLA, APA, BibTeX, etc.)
 
 % [0.5-1 pages]
 \section{Dataset and Features}
@@ -77,9 +76,14 @@ For inputs into our CNN, we represent all images in the CIE Lab color space, whi
 \subsection{ab Channel Discretization}
 
 % TODO(eling8) - grid size of ???
-We additionally discretize the ab space into 112 buckets and use bucket indices as the desired output instead of raw ab values during training. Our main motivation for this bucketing schema is due to the nature of loss functions based on distance between the predicted and true label. Because these functions are best minimized by mid-range values for a and b, minimizing the loss function does not provide the vibrancy in color we seek in our predictions. Furthermore, since the RGB color space is contained entirely within the CIE Lab color space, we may predict an Lab color that is outside of the possible set of RGB colors, giving an invalid result. Thus, we need some way of restricting the possible output set to only the CIE Lab colors that have a valid RGB mapping. Instead of directly predicting values for a, b, we divide the ab output space into buckets, and compute a probability distribution over the set of discrete colors. We chose to quantize the ab output space, where a and b each range from -128 to 127, into buckets with grid size of \textbf{[INSERT NUMBER HERE]}, excluding buckets that lie outside the RGB color space. This produced a total of 112 buckets. Using a set of discrete colors allows us to treat this problem as a multinomial classification problem, where for each pixel, we predict a probability distribution over the 112 buckets and use the bucket with the highest probability. These 112 buckets are plotted in CIE Lab color space in the figure below, with L=50:
+We additionally discretize the ab space into 112 buckets and use bucket indices as the desired output instead of raw ab values during training. Our main motivation for this bucketing schema is due to the nature of loss functions based on distance between the predicted and true label. Because these functions are best minimized by mid-range values for a and b, minimizing the loss function does not provide the vibrancy in color we seek in our predictions. Furthermore, since the RGB color space is contained entirely within the CIE Lab color space, we may predict an Lab color that is outside of the possible set of RGB colors, giving an invalid result. Thus, we need some way of restricting the possible output set to only the CIE Lab colors that have a valid RGB mapping. Instead of directly predicting values for a, b, we divide the ab output space into buckets, and compute a probability distribution over the set of discrete colors. We chose to quantize the ab output space, where a and b each range from -128 to 127, into buckets with grid size of \textbf{[INSERT NUMBER HERE]}, excluding buckets that lie outside the RGB color space. This produced a total of 112 buckets. Using a set of discrete colors allows us to treat this problem as a multinomial classification problem, where for each pixel, we predict a probability distribution over the 112 buckets and use the bucket with the highest probability. These 112 buckets are plotted in CIE Lab color space in figure \ref{fig:buckets}, with L=50.
 
-\centerline{\includegraphics[scale=0.5]{112_buckets.png}}
+\begin{figure}[h]
+  \centering
+    \includegraphics[scale=0.5]{112_buckets.png}
+  \caption{Plot of 112 buckets resulting from discretizing the ab space}
+  \label{fig:buckets}
+\end{figure}
 
 \subsection{Preprocessing}
 
@@ -88,27 +92,73 @@ Our dataset contains 10K images from Unsplash\cite{dataset}, which are broken in
 
 % TODO - check for accuracy, esp re: normalization that might've been removed later
 \begin{enumerate}
-\item 256x256 RGB images resized to 224x224
-\item RGB images converted to grayscale and fed into IRN2 to obtain an embedding per image
-\item RGB images normalized to [0, 1] and converted to Lab color
-\item Lab images separated into L and ab channels
-\item L channel normalized to [0, 1]
-\item ab channels discretized and represented by bucket index at each pixel
+    \item 256x256 RGB images resized to 224x224
+    \item RGB images converted to grayscale and fed into IRN2 to obtain an embedding per image
+    \item RGB images normalized to [0, 1] and converted to Lab color
+    \item Lab images separated into L and ab channels
+    \item L channel normalized to [0, 1]
+    \item ab channels discretized and represented by bucket index at each pixel
 \end{enumerate}
 
 As a result, we obtain the L channel (224, 244, 1) and IRN2 embeddings (1000,) as our inputs and the discretized ab channels (224, 224, 1) as the supervisory signal. Here are a few sample images from our training, validation, and test sets:\\
 
-% TODO - insert a row of images, maybe 3 each?
+% TODO - insert a row of images
 
 % [1-1.5 pages]
 \section{Methods}
 
+\subsection{v0: Baseline}
 
+Our baseline is trained on a toy dataset of size 40 using raw ab values, not buckets, and consists of one encoder and one decoder both using ReLU activation. The result, as seen in figure \ref{fig:baseline}, is a drastically desaturated image, as the loss function trained with raw ab values encourage conservative color predictions.
 
-% [1-3 pages for Experiments, Results, Discussion total]
-\section{Experiments}
+\begin{figure}[h]
+    \centering
+        \includegraphics[scale=0.3]{baseline_truth.png}
+        \includegraphics[scale=0.295]{baseline_pred.png}
+    \caption{Left: ground truth; right: baseline prediction}
+    \label{fig:baseline}
+\end{figure}
 
+\subsection{v1: CNN with IRN2 Fusion}
+
+v1 contains three main components:
+
+% TODO(ojwang): should we say the number of cells instead of the number of layers for the encoder/decoder? heard you say the former today at poster presentation
+\begin{enumerate}
+    \item Encoder: 8 convolutional and 4 normalization layers
+    \item Fusion: combination of encoder output and IRN2 embeddings as described in Iizuka and Simo-Serra et al.\cite{fusion} and depicted in figure \ref{fig:fusion}
+    \item Decoder: 12 convolutional and 3 normalization layers
+\end{enumerate}
+
+\begin{figure}[h]
+    \centering
+        \includegraphics[scale=0.1]{fusion.jpg}
+    \caption{Depth-wise fusion of encoder output (blue block) with IRN2 embeddings (a single yellow strip of dimensions (1000,)}
+    \label{fig:fusion}
+\end{figure}
+
+The function for convolutional layers per-pixel is written as the following, where $W$ is a shared matrix of weights, the $k$'s are the kernel height and width, and $x$, and $y$ are the pixel component of the input and output, respectively.
+
+$$y_{u, v} = \sigma \Big(b + \sum_{i = -k_h'}^{k_h'} \sum_{j = -k_w'}^{k_w'} W_{k_h' + i, k_w' + j} x_{u + i, v + j} \Big)$$
+$$k_h' = \frac{k_h-1}{2} \mbox{, } k_w' = \frac{k_w-1}{2}$$
+
+\subsection{v2: CNN without IRN2 Fusion}
+
+v2 is similar to v1, except it does not involve fusion with the IRN2 embeddings, retaining only the encoder and decoder components. After training on v1, we decided to remove IRN2 embeddings in an attempt to decrease the complexity of the model and possibly speed up training. The architecture of this neural network is shown in figure \ref{fig:unfused_net}.
+
+\begin{figure}[h]
+    \centering
+        \includegraphics[scale=0.4]{unfused_net.png}
+    \caption{Architecture of CNN without IRN2 fusion}
+    \label{fig:unfused_net}
+\end{figure}
+
+% [1-3 pages total for Results, Discussion]
 \section{Results}
+
+\subsection{v1: CNN with IRN2 Fusion}
+
+\subsection{v2: CNN without IRN2 Fusion}
 
 \section{Discussion}
 
@@ -131,19 +181,25 @@ As a result, we obtain the L channel (224, 244, 1) and IRN2 embeddings (1000,) a
 \begin{thebibliography}{8}
 
 \bibitem{zhang}
-Zhang, R, Isola, P, Efros, A (2016). Colorful Image Colorization. University of California, Berkeley. Retrieved from https://arxiv.org/pdf/1603.08511.pdf.
+Zhang, R, Isola, P, Efros, A (2016). Colorful Image Colorization. University of California, Berkeley. Retrieved from \begin{verbatim}https://arxiv.org/pdf/1603.08511.pdf\end{verbatim}
 
 \bibitem{resnet}
-“Improving Inception and Image Classification in TensorFlow,” Research Blog, 31-Aug-2016. [Online]. Available: https:// research.googleblog.com/2016/08/improving-inception-and-image.html.
+“Improving Inception and Image Classification in TensorFlow,” Research Blog, 31-Aug-2016. [Online]. Available: \begin{verbatim}https://research.googleblog.com/2016/08/improving-inception-and
+-image.html\end{verbatim}
 
 \bibitem{reddit}
-“History in Color - ColorizedHistory,” reddit. [Online]. Available: https://www.reddit.com/r/ColorizedHistory/.
+“History in Color - ColorizedHistory,” reddit. [Online]. Available: \begin{verbatim}https://www.reddit.com/r/ColorizedHistory/\end{verbatim}
 
 \bibitem{lincoln}
-“Modernized President: Portraits of Abraham Lincoln, In Color,” Time. [Online]. Available: http://time.com/3792700/a-vibrant-past-colorizing-the-archives-of-history/.
+“Modernized President: Portraits of Abraham Lincoln, In Color,” Time. [Online]. Available: \begin{verbatim}http://time.com/3792700/a-vibrant-past-colorizing-
+the-archives-of-history/\end{verbatim}
 
 \bibitem{dataset}
-FloydHub - Deep Learning Platform - Cloud GPU. [Online]. Available: https://www.floydhub.com/emilwallner/datasets/colornet.
+FloydHub - Deep Learning Platform - Cloud GPU. [Online]. Available: \begin{verbatim}https://www.floydhub.com/emilwallner/datasets/colornet\end{verbatim}
+
+\bibitem{fusion}
+S. Iizuka and E. Simo-Serra, “Let there be Color!: Joint End-to-end Learning of Global and Local Image Priors for Automatic Image Colorization with Simultaneous Classification.” [Online]. Available: \begin{verbatim}http://hi.cs.waseda.ac.jp/~iizuka/projects/colorization/data
+/colorization_sig2016.pdf\end{verbatim}
 
 % milestone bibliography items
 % \bibitem{7years}
